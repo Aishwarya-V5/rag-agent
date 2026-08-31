@@ -3,6 +3,5 @@ ragenv/
 .env
 vector_store/
 data/processed/
-data/raw/
 __pycache__/
 *.pyc
