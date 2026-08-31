@@ -26,6 +26,7 @@ Question: {question}
     response = client.chat.complete(
         model="mistral-small-latest",
         messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
     )
 
     sources = [{"doc": meta["source_doc"], "group": meta["group"]} for _, meta in results]
