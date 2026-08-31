@@ -1,0 +1,7 @@
+venv/
+ragenv/
+.env
+vector_store/
+data/processed/
+__pycache__/
+*.pyc
