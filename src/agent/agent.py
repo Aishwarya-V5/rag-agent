@@ -6,11 +6,14 @@ from src.retrieval.retriever import retrieve
 load_dotenv()
 client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
 
-def answer_ticket(question: str):
+def answer_ticket(question: str, history: list = None):
+    if history is None:
+        history = []
+
     results = retrieve(question, k=5)
 
     if not results:
-        return {"answer": "No relevant documentation found.", "sources": []}
+        return {"answer": "No relevant documentation found.", "sources": []}, history
 
     context = "\n\n".join([f"[{meta['source_doc']}]: {chunk}" for chunk, meta in results])
 
@@ -23,20 +26,25 @@ Context:
 Question: {question}
 """
 
+    messages = history + [{"role": "user", "content": prompt}]
+
     response = client.chat.complete(
         model="mistral-small-latest",
-        messages=[{"role": "user", "content": prompt}],
+        messages=messages,
         temperature=0.2,
     )
 
+    answer = response.choices[0].message.content
+    updated_history = history + [
+        {"role": "user", "content": question},
+        {"role": "assistant", "content": answer}
+    ]
+
     sources = [{"doc": meta["source_doc"], "group": meta["group"]} for _, meta in results]
 
-    return {
-        "answer": response.choices[0].message.content,
-        "sources": sources,
-    }
+    return {"answer": answer, "sources": sources}, updated_history
 
 if __name__ == "__main__":
-    result = answer_ticket("How do I create a profile on the Broadcom support portal?")
+    result, history = answer_ticket("How do I create a profile on the Broadcom support portal?")
     print(result["answer"])
     print("\nSources:", result["sources"])
