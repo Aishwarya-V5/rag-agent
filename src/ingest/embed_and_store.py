@@ -15,9 +15,9 @@ mistral_client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
 
 VECTOR_STORE_PATH = Path("vector_store/vector_index.pkl")
 BM25_INDEX_PATH = Path("vector_store/bm25_index.pkl")
-CHECKPOINT_PATH = Path("vector_store/checkpoint.json")
+CHECKPOINT_PATH = Path("vector_store/checkpoint.jsonl")  # JSONL now, not JSON
 
-BATCH_SIZE = 20  # chunks per API call
+BATCH_SIZE = 128
 
 def get_embeddings_batch(texts: list, max_retries=5):
     for attempt in range(max_retries):
@@ -36,20 +36,34 @@ def get_embeddings_batch(texts: list, max_retries=5):
                 raise
     raise Exception("Max retries exceeded for embedding batch")
 
-def load_checkpoint():
+def load_completed_ids():
+    completed = set()
     if CHECKPOINT_PATH.exists():
         with open(CHECKPOINT_PATH, "r") as f:
-            return json.load(f)
-    return {"completed_chunk_ids": [], "ids": [], "embeddings": [], "documents": [], "metadatas": []}
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    completed.add(entry["id"])
+                except json.JSONDecodeError:
+                    continue  # skip corrupted last line, if any
+    return completed
 
-def save_checkpoint(state):
-    with open(CHECKPOINT_PATH, "w") as f:
-        json.dump(state, f)
+def append_checkpoint(chunk_id, embedding, text, metadata):
+    with open(CHECKPOINT_PATH, "a") as f:
+        f.write(json.dumps({
+            "id": chunk_id,
+            "embedding": embedding,
+            "text": text,
+            "metadata": metadata
+        }) + "\n")
 
 def build_index():
     records = extract_all()
 
-    all_chunks = []  # list of (chunk_id, chunk_text, metadata)
+    all_chunks = []
     for record in records:
         chunks = chunk_text(record["text"])
         for i, chunk in enumerate(chunks):
@@ -63,8 +77,7 @@ def build_index():
             }
             all_chunks.append((chunk_id, chunk, metadata))
 
-    state = load_checkpoint()
-    completed_ids = set(state["completed_chunk_ids"])
+    completed_ids = load_completed_ids()
     remaining = [c for c in all_chunks if c[0] not in completed_ids]
 
     print(f"Total chunks: {len(all_chunks)} | Already done: {len(completed_ids)} | Remaining: {len(remaining)}")
@@ -77,36 +90,37 @@ def build_index():
 
         embeddings = get_embeddings_batch(batch_texts)
 
-        state["ids"].extend(batch_ids)
-        state["embeddings"].extend(embeddings)
-        state["documents"].extend(batch_texts)
-        state["metadatas"].extend(batch_metas)
-        state["completed_chunk_ids"].extend(batch_ids)
+        for cid, emb, txt, meta in zip(batch_ids, embeddings, batch_texts, batch_metas):
+            append_checkpoint(cid, emb, txt, meta)
 
-        save_checkpoint(state)
-        print(f"Progress: {len(state['completed_chunk_ids'])}/{len(all_chunks)} chunks embedded")
-        time.sleep(1)  # brief pause between batches
+        done_so_far = len(completed_ids) + i + len(batch)
+        print(f"Progress: {done_so_far}/{len(all_chunks)} chunks embedded")
 
-    # Final save to actual index files
+    # Build final index files by reading the full checkpoint
+    ids, embeddings, documents, metadatas = [], [], [], []
+    with open(CHECKPOINT_PATH, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+                ids.append(entry["id"])
+                embeddings.append(entry["embedding"])
+                documents.append(entry["text"])
+                metadatas.append(entry["metadata"])
+            except json.JSONDecodeError:
+                continue
+
     with open(VECTOR_STORE_PATH, "wb") as f:
-        pickle.dump({
-            "ids": state["ids"],
-            "embeddings": state["embeddings"],
-            "documents": state["documents"],
-            "metadatas": state["metadatas"],
-        }, f)
+        pickle.dump({"ids": ids, "embeddings": embeddings, "documents": documents, "metadatas": metadatas}, f)
 
-    tokenized_corpus = [doc.lower().split() for doc in state["documents"]]
+    tokenized_corpus = [doc.lower().split() for doc in documents]
     bm25 = BM25Okapi(tokenized_corpus)
     with open(BM25_INDEX_PATH, "wb") as f:
-        pickle.dump({
-            "bm25": bm25,
-            "documents": state["documents"],
-            "metadatas": state["metadatas"],
-            "ids": state["ids"],
-        }, f)
+        pickle.dump({"bm25": bm25, "documents": documents, "metadatas": metadatas, "ids": ids}, f)
 
-    print(f"\nDone. Indexed {len(state['ids'])} chunks from {len(records)} extracted pages/docs.")
+    print(f"\nDone. Indexed {len(ids)} chunks total.")
     print(f"Vector index: {VECTOR_STORE_PATH}")
     print(f"BM25 index: {BM25_INDEX_PATH}")
 
