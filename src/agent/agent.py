@@ -10,7 +10,13 @@ def answer_ticket(question: str, history: list = None):
     if history is None:
         history = []
 
-    results = retrieve(question, k=5)
+    retrieval_query = question
+    if history:
+        last_user_msgs = [m["content"] for m in history if m["role"] == "user"]
+        if last_user_msgs:
+            retrieval_query = last_user_msgs[-1] + " " + question
+
+    results = retrieve(retrieval_query, k=10)
 
     if not results:
         return {"answer": "No relevant documentation found.", "sources": []}, history
@@ -29,9 +35,9 @@ Question: {question}
     messages = history + [{"role": "user", "content": prompt}]
 
     response = client.chat.complete(
-        model="mistral-small-latest",
+        model="open-mistral-nemo",
         messages=messages,
-        temperature=0.2,
+        temperature=0.1,
     )
 
     answer = response.choices[0].message.content
