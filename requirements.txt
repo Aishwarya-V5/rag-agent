@@ -10,3 +10,6 @@ uvicorn==0.32.1
 python-dotenv==1.0.1
 mistralai==1.2.5
 rank-bm25==0.2.2
+trafilatura==1.12.2
+pyyaml
+curl_cffi==0.7.4
