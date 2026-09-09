@@ -35,20 +35,33 @@ def cosine_similarity(query_vec, matrix):
     norms[norms == 0] = 1e-10
     return np.dot(matrix, query_vec) / norms
 
-def retrieve(query: str, k=5):
-    # Vector search
+
+def retrieve(query: str, k=10, group_filter=None):
     query_embedding = get_embedding(query)
-    sims = cosine_similarity(query_embedding, embeddings_matrix)
+
+    if group_filter and group_filter != "All":
+        indices = [i for i, m in enumerate(metadatas) if m["group"] == group_filter]
+    else:
+        indices = list(range(len(documents)))
+
+    if not indices:
+        return []
+
+    filtered_embeddings = embeddings_matrix[indices]
+    filtered_documents = [documents[i] for i in indices]
+    filtered_metadatas = [metadatas[i] for i in indices]
+
+    sims = cosine_similarity(query_embedding, filtered_embeddings)
     vector_ranks = np.argsort(sims)[::-1]
 
-    # BM25 search
     tokenized_query = query.lower().split()
-    bm25_scores = bm25.get_scores(tokenized_query)
+    # BM25 needs its own filtered lookup — build a matching subset
+    bm25_scores_full = bm25.get_scores(tokenized_query)
+    bm25_scores = [bm25_scores_full[i] for i in indices]
     bm25_ranks = np.argsort(bm25_scores)[::-1]
 
-    # Reciprocal Rank Fusion (RRF) — merges both rankings
     rrf_scores = {}
-    K = 60  # standard RRF constant
+    K = 60
     for rank, idx in enumerate(vector_ranks):
         rrf_scores[idx] = rrf_scores.get(idx, 0) + 1 / (K + rank + 1)
     for rank, idx in enumerate(bm25_ranks):
@@ -56,5 +69,5 @@ def retrieve(query: str, k=5):
 
     top_indices = sorted(rrf_scores, key=rrf_scores.get, reverse=True)[:k]
 
-    results = [(documents[i], metadatas[i]) for i in top_indices]
+    results = [(filtered_documents[i], filtered_metadatas[i]) for i in top_indices]
     return results

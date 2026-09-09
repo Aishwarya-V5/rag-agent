@@ -6,7 +6,7 @@ from src.retrieval.retriever import retrieve
 load_dotenv()
 client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
 
-def answer_ticket(question: str, history: list = None):
+def answer_ticket(question: str, history: list = None, group_filter: str = None):
     if history is None:
         history = []
 
@@ -16,7 +16,7 @@ def answer_ticket(question: str, history: list = None):
         if last_user_msgs:
             retrieval_query = last_user_msgs[-1] + " " + question
 
-    results = retrieve(retrieval_query, k=10)
+    results = retrieve(retrieval_query, k=10, group_filter=group_filter)
 
     if not results:
         return {"answer": "No relevant documentation found.", "sources": []}, history

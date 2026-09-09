@@ -70,6 +70,8 @@ for message in st.session_state.history:
 
 
 # Chat input
+CATEGORIES = ["All", "veeam", "sops", "tickets", "kb", "repository", "vm_virtualization"]
+selected_category = st.selectbox("Search within category", CATEGORIES)
 question = st.chat_input("Describe your issue...")
 
 
@@ -81,9 +83,10 @@ if question:
 
     # Call your existing RAG agent
     result, st.session_state.history = answer_ticket(
-        question,
-        st.session_state.history
-    )
+    question,
+    st.session_state.history,
+    group_filter=selected_category if selected_category != "All" else None
+)
 
     # Display agent response
     with st.chat_message("assistant"):
