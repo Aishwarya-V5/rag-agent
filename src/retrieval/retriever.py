@@ -11,16 +11,27 @@ mistral_client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
 VECTOR_STORE_PATH = Path("vector_store/vector_index.pkl")
 BM25_INDEX_PATH = Path("vector_store/bm25_index.pkl")
 
-with open(VECTOR_STORE_PATH, "rb") as f:
-    vector_data = pickle.load(f)
+embeddings_matrix = None
+documents = None
+metadatas = None
+bm25 = None
 
-with open(BM25_INDEX_PATH, "rb") as f:
-    bm25_data = pickle.load(f)
 
-embeddings_matrix = np.array(vector_data["embeddings"])
-documents = vector_data["documents"]
-metadatas = vector_data["metadatas"]
-bm25 = bm25_data["bm25"]
+def load_index():
+    global embeddings_matrix, documents, metadatas, bm25
+    with open(VECTOR_STORE_PATH, "rb") as f:
+        vector_data = pickle.load(f)
+    with open(BM25_INDEX_PATH, "rb") as f:
+        bm25_data = pickle.load(f)
+
+    embeddings_matrix = np.array(vector_data["embeddings"])
+    documents = vector_data["documents"]
+    metadatas = vector_data["metadatas"]
+    bm25 = bm25_data["bm25"]
+
+
+load_index()  # initial load when module is first imported
+
 
 def get_embedding(text: str):
     response = mistral_client.embeddings.create(
@@ -28,6 +39,7 @@ def get_embedding(text: str):
         inputs=[text]
     )
     return response.data[0].embedding
+
 
 def cosine_similarity(query_vec, matrix):
     query_vec = np.array(query_vec)
@@ -37,8 +49,6 @@ def cosine_similarity(query_vec, matrix):
 
 
 def retrieve(query: str, k=10, group_filter=None):
-    query_embedding = get_embedding(query)
-
     if group_filter and group_filter != "All":
         indices = [i for i, m in enumerate(metadatas) if m["group"] == group_filter]
     else:
@@ -51,11 +61,11 @@ def retrieve(query: str, k=10, group_filter=None):
     filtered_documents = [documents[i] for i in indices]
     filtered_metadatas = [metadatas[i] for i in indices]
 
+    query_embedding = get_embedding(query)
     sims = cosine_similarity(query_embedding, filtered_embeddings)
     vector_ranks = np.argsort(sims)[::-1]
 
     tokenized_query = query.lower().split()
-    # BM25 needs its own filtered lookup — build a matching subset
     bm25_scores_full = bm25.get_scores(tokenized_query)
     bm25_scores = [bm25_scores_full[i] for i in indices]
     bm25_ranks = np.argsort(bm25_scores)[::-1]
