@@ -27,8 +27,11 @@ def extract_temp_file(uploaded_file):
         dfs = pd.read_excel(file_like, sheet_name=None)
         parts = []
         for sheet_name, df in dfs.items():
-            parts.append(f"Sheet: {sheet_name}\n{df.to_string(index=False)}")
-        text = "\n\n".join(parts)
+            parts.append(f"=== Sheet: {sheet_name} ===")
+            for _, row in df.iterrows():
+                row_text = " | ".join(f"{col}: {row[col]}" for col in df.columns if pd.notna(row[col]))
+                parts.append(row_text)
+        text = "\n".join(parts)
 
     elif suffix == "csv":
         df = pd.read_csv(file_like)
