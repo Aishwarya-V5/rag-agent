@@ -24,10 +24,13 @@ def extract_docx(path: Path) -> str:
 
 def extract_excel(path: Path) -> str:
     dfs = pd.read_excel(path, sheet_name=None)
-    text_parts = []
+    parts = []
     for sheet_name, df in dfs.items():
-        text_parts.append(f"Sheet: {sheet_name}\n{df.to_string(index=False)}")
-    return "\n\n".join(text_parts)
+        parts.append(f"=== Sheet: {sheet_name} ===")
+        for _, row in df.iterrows():
+            row_text = " | ".join(f"{col}: {row[col]}" for col in df.columns if pd.notna(row[col]))
+            parts.append(row_text)
+    return "\n".join(parts)
 
 def extract_all():
     records = []
