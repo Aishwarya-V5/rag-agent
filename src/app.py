@@ -418,11 +418,15 @@ st.caption(
 
 
 # --- Config ---
-CATEGORIES = ["All", "vmware", "netapp", "dell_emc", "veeam", "exagrid", "hitachi", "microsoft"]
+CATEGORIES = ["All", "vmware", "netapp", "dell_emc", "veeam", "exagrid", "hitachi", "microsoft", "reference"]
 RAW_DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "raw"
 
 
 # --- Sidebar: permanent knowledge base upload ---
+# ============================================================
+# SIDEBAR
+# ============================================================
+
 with st.sidebar:
 
     # ========================================================
