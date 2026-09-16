@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from mistralai import Mistral
-from src.retrieval.retriever import retrieve
+from src.retrieval.retriever import retrieve, retrieve_all_in_group
 
 load_dotenv()
 client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
@@ -16,7 +16,25 @@ def answer_ticket(question: str, history: list = None, group_filter: str = None)
         if last_user_msgs:
             retrieval_query = last_user_msgs[-1] + " " + question
 
-    results = retrieve(retrieval_query, k=10, group_filter=group_filter)
+    # Use more chunks for enumeration/list-style questions
+    list_keywords = [
+        "list all",
+        "list the",
+        "what are all",
+        "every",
+        "each of the",
+    ]
+
+    is_list_query = any(kw in question.lower() for kw in list_keywords)
+
+    if is_list_query and group_filter:
+        all_results = retrieve_all_in_group(group_filter)
+        if len(all_results) <= 150:  # safe threshold — adjust based on testing
+            results = all_results
+        else:
+            results = retrieve(retrieval_query, k=50, group_filter=group_filter)
+    else:
+        results = retrieve(retrieval_query, k=10, group_filter=group_filter)
 
     if not results:
         return {"answer": "No relevant documentation found.", "sources": []}, history
