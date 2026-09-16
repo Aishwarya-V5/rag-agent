@@ -197,61 +197,38 @@ st.markdown(
 
 
     /* ========================================================
-       SEARCH LABEL
+       MODE CAPTION
+       Shown above the input row via st.caption(), not as a
+       hand-positioned <div> squeezed into a narrow column next
+       to the other widgets. Plain block-level text always
+       renders at its natural width and can never overlap a
+       neighboring widget, so this replaces the old
+       .chat-search-label / .temporary-label / .chat-search
+       divs entirely.
        ======================================================== */
 
-    .chat-search-label {
+    .st-key-fixed_chatbar div[data-testid="stCaptionContainer"] {
 
-        height: 44px;
+        padding: 0 4px 6px 4px;
 
-        display: flex;
-
-        align-items: top;
-
-        justify-content: flex-end;
-
-        box-sizing: border-box;
-
-        padding-right: 5px;
-        padding-bottom: 60px;
-
-        font-size: 20px;
-
-        line-height: 44px;
-
-        font-weight: 400;
-
-        color: #4b5563;
-
-        white-space: nowrap;
-
-        transform: translateY(-1px);
+        margin: 0;
     }
 
-.chat-search {
-    height: 44px;
 
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
+    /* ========================================================
+       COLUMN CLIPPING
+       Keeps any widget from drawing over its neighbor if a
+       column ever ends up narrower than its content.
+       ======================================================== */
 
-    box-sizing: border-box;
+    .st-key-fixed_chatbar
+    div[data-testid="stHorizontalBlock"]
+    div[data-testid="column"] {
 
-    padding: 0;
-    padding-left: 102px;
-    padding-bottom:5px;
-    margin: 0;
+        overflow: hidden;
 
-    font-size: 20px;
-    line-height: 1.2;
-    font-weight: 400;
-
-    color: #4b5563;
-
-    white-space: nowrap;
-
-    transform: none;
-}
+        min-width: 0;
+    }
 
 
     /* ========================================================
@@ -371,30 +348,6 @@ st.markdown(
         background: #374151 !important;
 
         color: white !important;
-    }
-
-
-    /* ========================================================
-       TEMPORARY DOCUMENT
-       ======================================================== */
-
-    .temporary-label {
-
-        height: 44px;
-
-        display: flex;
-
-        align-items: center;
-
-        justify-content: center;
-
-        font-size: 16px;
-
-        color: #6b7280;
-
-        white-space: nowrap;
-        padding-right: 20px;
-        padding-bottom: 3px;
     }
 
 
@@ -674,11 +627,30 @@ with st.container(
     ):
 
         # ----------------------------------------------------
-        # QUESTION | SEARCH | CATEGORY | SEND
+        # MODE CAPTION
+        #
+        # Plain st.caption() above the row instead of a
+        # hand-positioned label div squeezed into a narrow
+        # column beside the other widgets. Renders at its own
+        # natural width every time, so it can't overlap the
+        # dropdown or the send button on any screen size.
         # ----------------------------------------------------
 
-        col_question, col_search, col_category, col_send = st.columns(
-            [6.5, 0.9, 1.8, 0.6],
+        if mode == "Knowledge Base":
+
+            st.caption("🔎 Searching the knowledge base — select a category:")
+
+        else:
+
+            st.caption("📄 Answering from your temporary document")
+
+
+        # ----------------------------------------------------
+        # QUESTION | CATEGORY | SEND
+        # ----------------------------------------------------
+
+        col_question, col_category, col_send = st.columns(
+            [7.5, 1.8, 0.7],
             vertical_alignment="center"
         )
 
@@ -694,35 +666,6 @@ with st.container(
                 placeholder="Describe your issue...",
                 label_visibility="collapsed"
             )
-
-
-        # ====================================================
-        # SEARCH
-        # ====================================================
-
-        with col_search:
-
-            if mode == "Knowledge Base":
-
-                st.markdown(
-                    """
-                    <div class="chat-search-label">
-                        Select:
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-            else:
-
-                st.markdown(
-                    """
-                    <div class="chat-search">
-                        Document:
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
 
 
         # ====================================================
@@ -743,15 +686,6 @@ with st.container(
             else:
 
                 selected_category = "All"
-
-                st.markdown(
-                    """
-                    <div class="temporary-label">
-                        Temporary
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
 
 
         # ====================================================
