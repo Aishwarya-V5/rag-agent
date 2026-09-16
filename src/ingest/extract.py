@@ -52,10 +52,27 @@ def extract_all():
                         })
                     print(f"Extracted: {file_path.name} ({group_name}) - {len(pages)} pages")
                     continue
+
+                elif suffix in (".xlsx", ".xls", ".csv"):
+                    dfs = pd.read_excel(file_path, sheet_name=None) if suffix != ".csv" else {"Sheet1": pd.read_csv(file_path)}
+                    row_count = 0
+                    for sheet_name, df in dfs.items():
+                        for _, row in df.iterrows():
+                            row_text = f"[Sheet: {sheet_name}] " + " | ".join(
+                                f"{col}: {row[col]}" for col in df.columns if pd.notna(row[col])
+                            )
+                            records.append({
+                                "source_doc": file_path.name,
+                                "group": group_name,
+                                "page": None,
+                                "text": row_text,
+                            })
+                            row_count += 1
+                    print(f"Extracted: {file_path.name} ({group_name}) - {row_count} rows")
+                    continue
+
                 elif suffix == ".docx":
                     text = extract_docx(file_path)
-                elif suffix in (".xlsx", ".xls", ".csv"):
-                    text = extract_excel(file_path)
                 elif suffix in (".txt", ".md"):
                     text = file_path.read_text(encoding="utf-8", errors="ignore")
                 else:

@@ -22,7 +22,7 @@ st.caption("Ask questions about your troubleshooting documentation")
 
 
 # --- Config ---
-CATEGORIES = ["All", "vmware", "netapp", "dell_emc", "veeam", "exagrid", "hitachi", "microsoft"]
+CATEGORIES = ["All", "vmware", "netapp", "dell_emc", "veeam", "exagrid", "hitachi", "microsoft", "reference"]
 RAW_DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "raw"
 
 
