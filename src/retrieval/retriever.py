@@ -81,3 +81,12 @@ def retrieve(query: str, k=10, group_filter=None):
 
     results = [(filtered_documents[i], filtered_metadatas[i]) for i in top_indices]
     return results
+
+def retrieve_all_in_group(group_filter: str):
+    """
+    Returns every chunk belonging to a specific group, with no similarity ranking.
+    Used for 'list all' style questions where completeness matters more than relevance ranking.
+    """
+    indices = [i for i, m in enumerate(metadatas) if m["group"] == group_filter]
+    results = [(documents[i], metadatas[i]) for i in indices]
+    return results
