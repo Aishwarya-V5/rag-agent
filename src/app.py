@@ -228,6 +228,31 @@ st.markdown(
         transform: translateY(-1px);
     }
 
+.chat-search {
+    height: 44px;
+
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+
+    box-sizing: border-box;
+
+    padding: 0;
+    padding-left: 102px;
+    padding-bottom:5px;
+    margin: 0;
+
+    font-size: 20px;
+    line-height: 1.2;
+    font-weight: 400;
+
+    color: #4b5563;
+
+    white-space: nowrap;
+
+    transform: none;
+}
+
 
     /* ========================================================
        CATEGORY SELECTBOX
@@ -368,6 +393,8 @@ st.markdown(
         color: #6b7280;
 
         white-space: nowrap;
+        padding-right: 20px;
+        padding-bottom: 3px;
     }
 
 
@@ -684,7 +711,7 @@ with st.container(
 
                 st.markdown(
                     """
-                    <div class="chat-search-label">
+                    <div class="chat-search">
                         Document:
                     </div>
                     """,
