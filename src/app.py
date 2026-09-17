@@ -490,38 +490,74 @@ with st.sidebar:
                     f.write(uploaded_file.getbuffer())
 
                 INGEST_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-                log_file = open(INGEST_LOG_PATH, "w")
 
                 proc = subprocess.Popen(
-                    [sys.executable, "-m", "src.ingest.embed_and_store"],
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
+                    [sys.executable, "-u", "-m", "src.ingest.embed_and_store"],
                     cwd=str(Path(__file__).resolve().parents[1])
                 )
 
                 st.session_state.ingest_process = proc
                 st.session_state.ingest_filename = uploaded_file.name
-                st.info(f"Started indexing '{uploaded_file.name}' in the background. You can keep asking questions — this will finish on its own.")
+
+                st.info(
+                    f"Started indexing '{uploaded_file.name}' in the background. "
+                    f"You can keep asking questions — this will finish on its own."
+                )
+
                 st.rerun()
 
     # --- Check on background indexing every rerun (non-blocking) ---
-    if st.session_state.ingest_process is not None:
+    # --- Automatically check background indexing ---
+    @st.fragment(run_every="2s")
+    def check_indexing_status():
+
+        if st.session_state.ingest_process is None:
+            return
+
         proc = st.session_state.ingest_process
         return_code = proc.poll()
 
         if return_code is None:
-            st.info(f"⏳ Indexing '{st.session_state.ingest_filename}' in progress...")
+
+            st.info(
+                f"⏳ Indexing "
+                f"'{st.session_state.ingest_filename}' "
+                f"in progress..."
+            )
+
+        elif return_code == 0:
+
+            filename = st.session_state.ingest_filename
+
+            st.success(
+                f"✅ '{filename}' indexed successfully!"
+            )
+
+            # Reload the newly updated index
+            load_index()
+
+            # Clear process state
+            st.session_state.ingest_process = None
+            st.session_state.ingest_filename = None
+
         else:
-            if return_code == 0:
-                st.success(f"'{st.session_state.ingest_filename}' indexed successfully!")
-                load_index()
-            else:
-                st.error(f"Indexing '{st.session_state.ingest_filename}' failed.")
-                if INGEST_LOG_PATH.exists():
-                    st.code(INGEST_LOG_PATH.read_text()[-2000:])
+
+            filename = st.session_state.ingest_filename
+
+            st.error(
+                f"❌ Indexing '{filename}' failed."
+            )
+
+            if INGEST_LOG_PATH.exists():
+                st.code(
+                    INGEST_LOG_PATH.read_text()[-2000:]
+                )
 
             st.session_state.ingest_process = None
             st.session_state.ingest_filename = None
+
+
+    check_indexing_status()
 
 
     st.divider()
