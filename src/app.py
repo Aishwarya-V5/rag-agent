@@ -461,81 +461,67 @@ with st.sidebar:
     )
 
 
+    INGEST_LOG_PATH = Path(__file__).resolve().parents[1] / "vector_store" / "ingest_log.txt"
+
+    if "ingest_process" not in st.session_state:
+        st.session_state.ingest_process = None
+    if "ingest_filename" not in st.session_state:
+        st.session_state.ingest_filename = None
+
     if uploaded_file is not None:
+        target_dir = RAW_DATA_DIR / upload_group
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / uploaded_file.name
 
-        if st.button(
-            "Upload and Index",
-            key="upload_index_button"
-        ):
+        is_currently_being_indexed = (
+            st.session_state.ingest_process is not None
+            and st.session_state.ingest_filename == uploaded_file.name
+        )
 
-            target_dir = RAW_DATA_DIR / upload_group
+        if is_currently_being_indexed:
+            pass  # don't show anything here — the progress block below already covers it
+        elif target_path.exists():
+            st.warning(f"⚠️ '{uploaded_file.name}' already exists in **{upload_group}**. It's already part of the knowledge base — no need to upload it again.")
+        elif st.session_state.ingest_process is not None:
+            st.info(f"⏳ Still indexing '{st.session_state.ingest_filename}' in the background. Please wait before uploading another file.")
+        else:
+            if st.button("Upload and Index", key="upload_index_button"):
+                with open(target_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
 
-            target_dir.mkdir(
-                parents=True,
-                exist_ok=True
-            )
+                INGEST_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+                log_file = open(INGEST_LOG_PATH, "w")
 
-
-            target_path = (
-                target_dir
-                / uploaded_file.name
-            )
-
-
-            with open(target_path, "wb") as f:
-
-                f.write(
-                    uploaded_file.getbuffer()
+                proc = subprocess.Popen(
+                    [sys.executable, "-m", "src.ingest.embed_and_store"],
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    cwd=str(Path(__file__).resolve().parents[1])
                 )
 
+                st.session_state.ingest_process = proc
+                st.session_state.ingest_filename = uploaded_file.name
+                st.info(f"Started indexing '{uploaded_file.name}' in the background. You can keep asking questions — this will finish on its own.")
+                st.rerun()
 
-            st.info(
-                f"Saved {uploaded_file.name} "
-                f"to {upload_group}. Indexing now..."
-            )
+    # --- Check on background indexing every rerun (non-blocking) ---
+    if st.session_state.ingest_process is not None:
+        proc = st.session_state.ingest_process
+        return_code = proc.poll()
 
-
-            with st.spinner(
-                "Embedding new document — "
-                "this may take a moment..."
-            ):
-
-                result = subprocess.run(
-                    [
-                        sys.executable,
-                        "-m",
-                        "src.ingest.embed_and_store"
-                    ],
-                    capture_output=True,
-                    text=True,
-                    cwd=str(
-                        Path(__file__).resolve().parents[1]
-                    )
-                )
-
-
-            if result.returncode == 0:
-
-                st.success(
-                    f"'{uploaded_file.name}' "
-                    "indexed successfully!"
-                )
-
-                # Refresh in-memory index so the new
-                # document is searchable immediately
-                # (restored from original logic)
+        if return_code is None:
+            st.info(f"⏳ Indexing '{st.session_state.ingest_filename}' in progress...")
+        else:
+            if return_code == 0:
+                st.success(f"'{st.session_state.ingest_filename}' indexed successfully!")
                 load_index()
-
             else:
+                st.error(f"Indexing '{st.session_state.ingest_filename}' failed.")
+                if INGEST_LOG_PATH.exists():
+                    st.code(INGEST_LOG_PATH.read_text()[-2000:])
 
-                st.error(
-                    "Indexing failed. "
-                    "Check details below."
-                )
-
-                st.code(
-                    result.stderr[-2000:]
-                )
+            st.session_state.ingest_process = None
+            st.session_state.ingest_filename = None
 
 
     st.divider()
