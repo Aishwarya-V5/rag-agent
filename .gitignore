@@ -4,4 +4,4 @@ ragenv/
 vector_store/
 data/processed/
 __pycache__/
-*.pyc
+*.pycdata/raw/veeam/veeam_backup_13_user_guide.pdf
