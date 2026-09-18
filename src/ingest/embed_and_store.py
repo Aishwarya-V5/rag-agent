@@ -15,9 +15,10 @@ mistral_client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
 
 VECTOR_STORE_PATH = Path("vector_store/vector_index.pkl")
 BM25_INDEX_PATH = Path("vector_store/bm25_index.pkl")
-CHECKPOINT_PATH = Path("vector_store/checkpoint.jsonl")  # JSONL now, not JSON
+CHECKPOINT_PATH = Path("vector_store/checkpoint.jsonl")
 
 BATCH_SIZE = 128
+
 
 def get_embeddings_batch(texts: list, max_retries=5):
     for attempt in range(max_retries):
@@ -36,6 +37,7 @@ def get_embeddings_batch(texts: list, max_retries=5):
                 raise
     raise Exception("Max retries exceeded for embedding batch")
 
+
 def load_completed_ids():
     completed = set()
     if CHECKPOINT_PATH.exists():
@@ -48,8 +50,30 @@ def load_completed_ids():
                     entry = json.loads(line)
                     completed.add(entry["id"])
                 except json.JSONDecodeError:
-                    continue  # skip corrupted last line, if any
+                    continue
     return completed
+
+
+def get_already_indexed_files():
+    """
+    Return the set of source_doc filenames that already have at least one
+    chunk in the checkpoint. Used to skip re-extracting files whose content
+    is already fully embedded.
+    """
+    indexed = set()
+    if CHECKPOINT_PATH.exists():
+        with open(CHECKPOINT_PATH, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    indexed.add(entry["metadata"]["source_doc"])
+                except json.JSONDecodeError:
+                    continue
+    return indexed
+
 
 def append_checkpoint(chunk_id, embedding, text, metadata):
     with open(CHECKPOINT_PATH, "a") as f:
@@ -60,8 +84,10 @@ def append_checkpoint(chunk_id, embedding, text, metadata):
             "metadata": metadata
         }) + "\n")
 
+
 def build_index():
-    records = extract_all()
+    already_indexed_files = get_already_indexed_files()
+    records = extract_all(skip_files=already_indexed_files)
 
     all_chunks = []
     for record in records:
@@ -80,7 +106,7 @@ def build_index():
     completed_ids = load_completed_ids()
     remaining = [c for c in all_chunks if c[0] not in completed_ids]
 
-    print(f"Total chunks: {len(all_chunks)} | Already done: {len(completed_ids)} | Remaining: {len(remaining)}")
+    print(f"New chunks from newly-extracted files: {len(all_chunks)} | Already done overall: {len(completed_ids)} | Remaining to embed: {len(remaining)}")
 
     for i in range(0, len(remaining), BATCH_SIZE):
         batch = remaining[i:i + BATCH_SIZE]
@@ -93,8 +119,8 @@ def build_index():
         for cid, emb, txt, meta in zip(batch_ids, embeddings, batch_texts, batch_metas):
             append_checkpoint(cid, emb, txt, meta)
 
-        done_so_far = len(completed_ids) + i + len(batch)
-        print(f"Progress: {done_so_far}/{len(all_chunks)} chunks embedded")
+        done_so_far = i + len(batch)
+        print(f"Progress: {done_so_far}/{len(remaining)} new chunks embedded")
 
     # Build final index files by reading the full checkpoint
     ids, embeddings, documents, metadatas = [], [], [], []
@@ -120,9 +146,10 @@ def build_index():
     with open(BM25_INDEX_PATH, "wb") as f:
         pickle.dump({"bm25": bm25, "documents": documents, "metadatas": metadatas, "ids": ids}, f)
 
-    print(f"\nDone. Indexed {len(ids)} chunks total.")
+    print(f"\nDone. Indexed {len(ids)} chunks total (across all files, including previously-indexed ones).")
     print(f"Vector index: {VECTOR_STORE_PATH}")
     print(f"BM25 index: {BM25_INDEX_PATH}")
+
 
 if __name__ == "__main__":
     build_index()

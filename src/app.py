@@ -479,6 +479,12 @@ with st.sidebar:
 
     # ========================================================
     # ADD TO KNOWLEDGE BASE
+    #
+    # Indexing runs in the BACKGROUND (subprocess.Popen instead
+    # of subprocess.run) so the UI stays responsive — you can
+    # keep asking questions while a big file finishes embedding
+    # instead of the whole app freezing until it's done. A
+    # fragment polls the process every 2s and reports progress.
     # ========================================================
 
     st.header("📤 Add to Knowledge Base")
@@ -510,81 +516,103 @@ with st.sidebar:
     )
 
 
+    INGEST_LOG_PATH = Path(__file__).resolve().parents[1] / "vector_store" / "ingest_log.txt"
+
+    if "ingest_process" not in st.session_state:
+        st.session_state.ingest_process = None
+    if "ingest_filename" not in st.session_state:
+        st.session_state.ingest_filename = None
+
     if uploaded_file is not None:
+        target_dir = RAW_DATA_DIR / upload_group
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / uploaded_file.name
 
-        if st.button(
-            "Upload and Index",
-            key="upload_index_button"
-        ):
+        is_currently_being_indexed = (
+            st.session_state.ingest_process is not None
+            and st.session_state.ingest_filename == uploaded_file.name
+        )
 
-            target_dir = RAW_DATA_DIR / upload_group
+        if is_currently_being_indexed:
+            pass  # don't show anything here — the progress block below already covers it
+        elif target_path.exists():
+            st.warning(f"⚠️ '{uploaded_file.name}' already exists in **{upload_group}**. It's already part of the knowledge base — no need to upload it again.")
+        elif st.session_state.ingest_process is not None:
+            st.info(f"⏳ Still indexing '{st.session_state.ingest_filename}' in the background. Please wait before uploading another file.")
+        else:
+            if st.button("Upload and Index", key="upload_index_button"):
+                with open(target_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
 
-            target_dir.mkdir(
-                parents=True,
-                exist_ok=True
-            )
+                INGEST_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-
-            target_path = (
-                target_dir
-                / uploaded_file.name
-            )
-
-
-            with open(target_path, "wb") as f:
-
-                f.write(
-                    uploaded_file.getbuffer()
+                proc = subprocess.Popen(
+                    [sys.executable, "-u", "-m", "src.ingest.embed_and_store"],
+                    cwd=str(Path(__file__).resolve().parents[1])
                 )
 
+                st.session_state.ingest_process = proc
+                st.session_state.ingest_filename = uploaded_file.name
+
+                st.info(
+                    f"Started indexing '{uploaded_file.name}' in the background. "
+                    f"You can keep asking questions — this will finish on its own."
+                )
+
+                st.rerun()
+
+    # --- Check on background indexing every rerun (non-blocking) ---
+    # --- Automatically check background indexing ---
+    @st.fragment(run_every="2s")
+    def check_indexing_status():
+
+        if st.session_state.ingest_process is None:
+            return
+
+        proc = st.session_state.ingest_process
+        return_code = proc.poll()
+
+        if return_code is None:
 
             st.info(
-                f"Saved {uploaded_file.name} "
-                f"to {upload_group}. Indexing now..."
+                f"⏳ Indexing "
+                f"'{st.session_state.ingest_filename}' "
+                f"in progress..."
             )
 
+        elif return_code == 0:
 
-            with st.spinner(
-                "Embedding new document — "
-                "this may take a moment..."
-            ):
+            filename = st.session_state.ingest_filename
 
-                result = subprocess.run(
-                    [
-                        sys.executable,
-                        "-m",
-                        "src.ingest.embed_and_store"
-                    ],
-                    capture_output=True,
-                    text=True,
-                    cwd=str(
-                        Path(__file__).resolve().parents[1]
-                    )
-                )
+            st.success(
+                f"✅ '{filename}' indexed successfully!"
+            )
 
+            # Reload the newly updated index
+            load_index()
 
-            if result.returncode == 0:
+            # Clear process state
+            st.session_state.ingest_process = None
+            st.session_state.ingest_filename = None
 
-                st.success(
-                    f"'{uploaded_file.name}' "
-                    "indexed successfully!"
-                )
+        else:
 
-                # Refresh in-memory index so the new
-                # document is searchable immediately
-                # (restored from original logic)
-                load_index()
+            filename = st.session_state.ingest_filename
 
-            else:
+            st.error(
+                f"❌ Indexing '{filename}' failed."
+            )
 
-                st.error(
-                    "Indexing failed. "
-                    "Check details below."
-                )
-
+            if INGEST_LOG_PATH.exists():
                 st.code(
-                    result.stderr[-2000:]
+                    INGEST_LOG_PATH.read_text()[-2000:]
                 )
+
+            st.session_state.ingest_process = None
+            st.session_state.ingest_filename = None
+
+
+    check_indexing_status()
 
 
     st.divider()

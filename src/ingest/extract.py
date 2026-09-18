@@ -32,13 +32,20 @@ def extract_excel(path: Path) -> str:
             parts.append(row_text)
     return "\n".join(parts)
 
-def extract_all():
+def extract_all(skip_files: set = None):
+    if skip_files is None:
+        skip_files = set()
+
     records = []
     for group_folder in RAW_DIR.iterdir():
         if not group_folder.is_dir():
             continue
         group_name = group_folder.name
         for file_path in group_folder.iterdir():
+            if file_path.name in skip_files:
+                print(f"Skipping already-indexed file: {file_path.name}")
+                continue
+
             suffix = file_path.suffix.lower()
             try:
                 if suffix == ".pdf":
