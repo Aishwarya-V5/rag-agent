@@ -65,25 +65,22 @@ if "chat_category" not in st.session_state:
     st.session_state.chat_category = "All"
 
 # ------------------------------------------------------------
-# CLEAR-QUESTION FLAG
+# QUESTION INPUT KEY ROTATION
 #
 # The form runs with clear_on_submit=False, because
 # clear_on_submit=True wipes EVERY widget in the form back to
 # its default after each submit — including the category
-# selectbox. The question box is cleared manually instead: we
-# set this flag when a question is sent, then reset the text
-# input's session_state value at the very top of the NEXT run,
-# before the widget with that key is instantiated. That's the
-# only thing that resets — the category keeps whatever the
-# user picked.
+# selectbox. Instead of resetting the same widget's stored
+# value (which depends on the reset happening before the widget
+# is recreated on the next run), the question box is given a
+# BRAND NEW key every time a question is sent. A key that has
+# never been used before has no stored value, so Streamlit
+# always renders it empty — this sidesteps any ordering/timing
+# subtlety entirely instead of relying on it.
 # ------------------------------------------------------------
 
-if "clear_question" not in st.session_state:
-    st.session_state.clear_question = False
-
-if st.session_state.clear_question:
-    st.session_state.question_input = ""
-    st.session_state.clear_question = False
+if "question_input_version" not in st.session_state:
+    st.session_state.question_input_version = 0
 
 # ------------------------------------------------------------
 # PENDING QUESTION
@@ -742,7 +739,7 @@ with st.container(
                 "Question",
                 placeholder="Describe your issue...",
                 label_visibility="collapsed",
-                key="question_input"
+                key=f"question_input_{st.session_state.question_input_version}"
             )
 
 
@@ -803,7 +800,9 @@ if send:
         st.session_state.pending_mode = mode
         st.session_state.pending_category = selected_category
 
-        st.session_state.clear_question = True
+        # Rotate to a fresh, never-before-used widget key so the
+        # box is guaranteed to render empty on the very next run.
+        st.session_state.question_input_version += 1
 
         st.rerun()
 
