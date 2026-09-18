@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from src.agent.agent import answer_ticket
 from src.temp_doc.temp_agent import answer_from_temp_doc
@@ -62,6 +63,54 @@ if "question_mode" not in st.session_state:
 
 if "chat_category" not in st.session_state:
     st.session_state.chat_category = "All"
+
+# ------------------------------------------------------------
+# CLEAR-QUESTION FLAG
+#
+# The form runs with clear_on_submit=False, because
+# clear_on_submit=True wipes EVERY widget in the form back to
+# its default after each submit — including the category
+# selectbox. The question box is cleared manually instead: we
+# set this flag when a question is sent, then reset the text
+# input's session_state value at the very top of the NEXT run,
+# before the widget with that key is instantiated. That's the
+# only thing that resets — the category keeps whatever the
+# user picked.
+# ------------------------------------------------------------
+
+if "clear_question" not in st.session_state:
+    st.session_state.clear_question = False
+
+if st.session_state.clear_question:
+    st.session_state.question_input = ""
+    st.session_state.clear_question = False
+
+# ------------------------------------------------------------
+# PENDING QUESTION
+#
+# Sending is split into two steps so the question box empties
+# IMMEDIATELY on submit, before the answer is computed — rather
+# than sitting there full for the whole spinner and only
+# clearing once the answer is already on screen.
+#
+# Step 1 (in the "if send:" block below): stash the question,
+# mode, and category, set clear_question, and rerun right away.
+# That rerun clears the box on the very next render.
+#
+# Step 2 (the "if st.session_state.pending_question:" block
+# further down): on that same next run, the box is already
+# empty, so we go ahead and actually process the stashed
+# question — spinner, answer, save to chat_log.
+# ------------------------------------------------------------
+
+if "pending_question" not in st.session_state:
+    st.session_state.pending_question = None
+
+if "pending_mode" not in st.session_state:
+    st.session_state.pending_mode = None
+
+if "pending_category" not in st.session_state:
+    st.session_state.pending_category = None
 
 
 # ============================================================
@@ -622,7 +671,7 @@ with st.container(
 
     with st.form(
         key="chat_form",
-        clear_on_submit=True,
+        clear_on_submit=False,
         border=False
     ):
 
@@ -664,7 +713,8 @@ with st.container(
             question = st.text_input(
                 "Question",
                 placeholder="Describe your issue...",
-                label_visibility="collapsed"
+                label_visibility="collapsed",
+                key="question_input"
             )
 
 
@@ -701,14 +751,10 @@ with st.container(
 
 
 # ============================================================
-# PROCESS QUESTION
+# HANDLE SEND: STASH + CLEAR IMMEDIATELY
 # ============================================================
 
 if send:
-
-    # ========================================================
-    # EMPTY QUESTION
-    # ========================================================
 
     if not question.strip():
 
@@ -716,170 +762,261 @@ if send:
             "Please describe your issue before sending."
         )
 
-
     else:
 
-        question = question.strip()
+        # ----------------------------------------------------
+        # Stash everything the processing step needs, clear the
+        # question box, and rerun right away — so the box is
+        # already empty by the time the answer starts loading,
+        # instead of staying full through the whole spinner.
+        # ----------------------------------------------------
+
+        st.session_state.pending_question = question.strip()
+        st.session_state.pending_mode = mode
+        st.session_state.pending_category = selected_category
+
+        st.session_state.clear_question = True
+
+        st.rerun()
 
 
-        # ====================================================
-        # SAVE USER MESSAGE
-        # ====================================================
+# ============================================================
+# PROCESS PENDING QUESTION
+#
+# Runs on the rerun right after send — the question box is
+# already blank at this point (cleared above), so the answer
+# now loads with an empty box visible, matching the original
+# immediate-clear feel.
+# ============================================================
+
+if st.session_state.pending_question:
+
+    pending_q = st.session_state.pending_question
+    pending_mode = st.session_state.pending_mode
+    pending_category = st.session_state.pending_category
+
+
+    # ========================================================
+    # SAVE USER MESSAGE
+    # ========================================================
+
+    st.session_state.chat_log.append(
+        {
+            "role": "user",
+            "content": pending_q
+        }
+    )
+
+
+    # ========================================================
+    # DISPLAY USER MESSAGE
+    # ========================================================
+
+    with st.chat_message("user"):
+
+        st.markdown(pending_q)
+
+
+    # ========================================================
+    # TEMPORARY DOCUMENT MODE
+    # ========================================================
+
+    if pending_mode == "Temporary Document":
+
+        if st.session_state.temp_file is None:
+
+            answer_text = (
+                "Please upload a temporary document "
+                "first (see sidebar)."
+            )
+
+            sources = []
+
+
+        else:
+
+            with st.spinner(
+                "Reading document and answering..."
+            ):
+
+                result = answer_from_temp_doc(
+                    st.session_state.temp_file,
+                    pending_q
+                )
+
+
+            answer_text = result["answer"]
+
+            sources = []
+
+
+        # ----------------------------------------------------
+        # DISPLAY ANSWER
+        # ----------------------------------------------------
+
+        with st.chat_message("assistant"):
+
+            st.markdown(
+                answer_text
+            )
+
+
+        # ----------------------------------------------------
+        # SAVE ANSWER
+        # ----------------------------------------------------
 
         st.session_state.chat_log.append(
             {
-                "role": "user",
-                "content": question
+                "role": "assistant",
+                "content": answer_text,
+                "sources": sources
             }
         )
 
 
-        # ====================================================
-        # DISPLAY USER MESSAGE
-        # ====================================================
+    # ========================================================
+    # KNOWLEDGE BASE MODE
+    # ========================================================
 
-        with st.chat_message("user"):
+    else:
 
-            st.markdown(question)
+        # ----------------------------------------------------
+        # CATEGORY FILTER
+        # ----------------------------------------------------
+
+        group_filter = (
+            pending_category
+            if pending_category != "All"
+            else None
+        )
 
 
-        # ====================================================
-        # TEMPORARY DOCUMENT MODE
-        # ====================================================
+        # ----------------------------------------------------
+        # SEARCH KNOWLEDGE BASE
+        # ----------------------------------------------------
 
-        if mode == "Temporary Document":
+        with st.spinner(
+            "Searching knowledge base..."
+        ):
 
-            if st.session_state.temp_file is None:
-
-                answer_text = (
-                    "Please upload a temporary document "
-                    "first (see sidebar)."
+            result, st.session_state.history = (
+                answer_ticket(
+                    pending_q,
+                    st.session_state.history,
+                    group_filter=group_filter
                 )
+            )
 
-                sources = []
+
+        # ----------------------------------------------------
+        # DISPLAY ANSWER
+        # ----------------------------------------------------
+
+        with st.chat_message("assistant"):
+
+            st.markdown(
+                result["answer"]
+            )
 
 
-            else:
+            # ------------------------------------------------
+            # SOURCES
+            # ------------------------------------------------
 
-                with st.spinner(
-                    "Reading document and answering..."
+            if result["sources"]:
+
+                with st.expander(
+                    "📚 Sources"
                 ):
 
-                    result = answer_from_temp_doc(
-                        st.session_state.temp_file,
-                        question
-                    )
+                    for source in result["sources"]:
+
+                        st.write(
+                            source["doc"]
+                        )
 
 
-                answer_text = result["answer"]
+        # ----------------------------------------------------
+        # SAVE ANSWER
+        # ----------------------------------------------------
 
-                sources = []
-
-
-            # ------------------------------------------------
-            # DISPLAY ANSWER
-            # ------------------------------------------------
-
-            with st.chat_message("assistant"):
-
-                st.markdown(
-                    answer_text
-                )
-
-
-            # ------------------------------------------------
-            # SAVE ANSWER
-            # ------------------------------------------------
-
-            st.session_state.chat_log.append(
-                {
-                    "role": "assistant",
-                    "content": answer_text,
-                    "sources": sources
-                }
-            )
+        st.session_state.chat_log.append(
+            {
+                "role": "assistant",
+                "content": result["answer"],
+                "sources": [
+                    source["doc"]
+                    for source in result["sources"]
+                ]
+            }
+        )
 
 
-        # ====================================================
-        # KNOWLEDGE BASE MODE
-        # ====================================================
+    # ========================================================
+    # CLEAR PENDING STATE, THEN RERUN TO SETTLE
+    # ========================================================
 
-        else:
+    st.session_state.pending_question = None
+    st.session_state.pending_mode = None
+    st.session_state.pending_category = None
 
-            # ------------------------------------------------
-            # CATEGORY FILTER
-            # ------------------------------------------------
-
-            group_filter = (
-                selected_category
-                if selected_category != "All"
-                else None
-            )
+    st.rerun()
 
 
-            # ------------------------------------------------
-            # SEARCH KNOWLEDGE BASE
-            # ------------------------------------------------
+# ============================================================
+# AUTO-SCROLL TO BOTTOM
+#
+# Streamlit doesn't scroll the page on its own when new content
+# is added, so after a new answer lands the user is often left
+# looking at the middle of the conversation instead of the
+# latest message. This runs at the very end of every completed
+# run (i.e. once everything, including a freshly answered
+# question, is already in st.session_state.chat_log and drawn
+# on screen) and scrolls the page down to the bottom.
+#
+# It has to go through components.html rather than
+# st.markdown(..., unsafe_allow_html=True): Streamlit inserts
+# markdown HTML directly into the page, where <script> tags are
+# not executed. components.html renders inside its own iframe,
+# where scripts DO run, so it reaches out to window.parent (the
+# actual app page) to do the scrolling. height=0 keeps that
+# iframe invisible.
+# ============================================================
 
-            with st.spinner(
-                "Searching knowledge base..."
-            ):
+components.html(
+    """
+    <script>
+        function scrollChatToBottom() {
+            var doc = window.parent.document;
 
-                result, st.session_state.history = (
-                    answer_ticket(
-                        question,
-                        st.session_state.history,
-                        group_filter=group_filter
-                    )
-                )
+            // Streamlit wraps the page content in one of these,
+            // depending on version, and THIS is what actually
+            // scrolls (the outer window usually does not) — so
+            // scrolling window.parent alone had no effect.
+            var container = (
+                doc.querySelector('[data-testid="stMain"]') ||
+                doc.querySelector('section.main') ||
+                doc.querySelector('[data-testid="stAppViewContainer"]')
+            );
 
+            if (container) {
+                container.scrollTop = container.scrollHeight;
+            }
 
-            # ------------------------------------------------
-            # DISPLAY ANSWER
-            # ------------------------------------------------
+            // Fallback, in case some Streamlit version scrolls
+            // the window itself instead of an inner container.
+            window.parent.scrollTo(0, doc.body.scrollHeight);
+        }
 
-            with st.chat_message("assistant"):
-
-                st.markdown(
-                    result["answer"]
-                )
-
-
-                # --------------------------------------------
-                # SOURCES
-                # --------------------------------------------
-
-                if result["sources"]:
-
-                    with st.expander(
-                        "📚 Sources"
-                    ):
-
-                        for source in result["sources"]:
-
-                            st.write(
-                                source["doc"]
-                            )
-
-
-            # ------------------------------------------------
-            # SAVE ANSWER
-            # ------------------------------------------------
-
-            st.session_state.chat_log.append(
-                {
-                    "role": "assistant",
-                    "content": result["answer"],
-                    "sources": [
-                        source["doc"]
-                        for source in result["sources"]
-                    ]
-                }
-            )
-
-
-        # ====================================================
-        # RERUN
-        # ====================================================
-
-        st.rerun()
+        // Retried a few times: right after a rerun, Streamlit
+        // may still be laying out the newest message, so the
+        // scrollHeight read on the very first attempt can be
+        // stale (too short) — later attempts catch it once
+        // everything has actually rendered.
+        setTimeout(scrollChatToBottom, 50);
+        setTimeout(scrollChatToBottom, 200);
+        setTimeout(scrollChatToBottom, 500);
+    </script>
+    """,
+    height=0
+)
