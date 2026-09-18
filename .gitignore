@@ -5,3 +5,4 @@ vector_store/
 data/processed/
 __pycache__/
 *.pyc
+data/raw/veeam/veeam_backup_13_user_guide.pdf
