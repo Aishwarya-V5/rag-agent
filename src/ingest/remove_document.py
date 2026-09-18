@@ -12,12 +12,20 @@ def remove_document(source_doc_name: str):
     if CHECKPOINT_PATH.exists():
         kept_lines = []
         removed_count = 0
+        skipped_count = 0
         with open(CHECKPOINT_PATH, "r") as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
-                entry = json.loads(line)
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    # Same defensive handling as embed_and_store.py:
+                    # a corrupted/malformed line is dropped rather than
+                    # crashing the whole removal.
+                    skipped_count += 1
+                    continue
                 if entry["metadata"]["source_doc"] == source_doc_name:
                     removed_count += 1
                 else:
@@ -28,6 +36,8 @@ def remove_document(source_doc_name: str):
                 f.write(line + "\n")
 
         print(f"Removed {removed_count} chunks from checkpoint.jsonl")
+        if skipped_count:
+            print(f"Skipped {skipped_count} corrupted/unreadable line(s) in checkpoint.jsonl")
 
     # --- Rebuild vector_index.pkl and bm25_index.pkl from cleaned checkpoint ---
     ids, embeddings, documents, metadatas = [], [], [], []
@@ -36,7 +46,10 @@ def remove_document(source_doc_name: str):
             line = line.strip()
             if not line:
                 continue
-            entry = json.loads(line)
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
             ids.append(entry["id"])
             embeddings.append(entry["embedding"])
             documents.append(entry["text"])
